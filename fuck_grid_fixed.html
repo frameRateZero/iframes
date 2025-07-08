@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FUCK Grid</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: white;
+            margin: 20px;
+            padding: 0;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(40, 8px);
+            grid-template-rows: repeat(40, 8px);
+            gap: 1px;
+            margin: 20px 0;
+            background: #000;
+            padding: 1px;
+            font-size: 6px;
+            line-height: 8px;
+        }
+
+        .cell {
+            width: 8px;
+            height: 8px;
+            background: white;
+            color: black;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .cell.redacted {
+            background: black;
+            color: black;
+        }
+
+        .controls {
+            margin: 20px 0;
+        }
+
+        .slider-group {
+            margin: 5px 0;
+        }
+
+        .slider-label {
+            display: inline-block;
+            width: 120px;
+            font-weight: bold;
+            font-size: 12px;
+        }
+
+        .slider {
+            width: 150px;
+            margin: 0 5px;
+            height: 20px;
+        }
+
+        .slider-value {
+            font-weight: bold;
+            width: 30px;
+            display: inline-block;
+            font-size: 12px;
+        }
+
+        .button {
+            background: white;
+            color: black;
+            border: 1px solid black;
+            padding: 5px 10px;
+            margin: 5px;
+            cursor: pointer;
+            font-family: monospace;
+        }
+
+        .button:hover {
+            background: black;
+            color: white;
+        }
+
+        .status {
+            margin: 10px 0;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="grid" id="grid"></div>
+
+    <div class="controls">
+        <div class="slider-group">
+            <span class="slider-label">Generation Mode</span>
+            <select id="generationMode" style="width: 150px; margin: 0 5px; height: 20px; font-family: monospace;">
+                <option value="random">Random Probabilistic</option>
+                <option value="staggered">Staggered Diagonal</option>
+                <option value="maximal">Maximal Packing</option>
+            </select>
+        </div>
+
+        <div class="slider-group">
+            <span class="slider-label">Base Letter Bias</span>
+            <input type="range" class="slider" id="baseBias" min="0" max="100" value="25">
+            <span class="slider-value" id="baseBiasValue">25</span>
+        </div>
+
+        <div class="slider-group">
+            <span class="slider-label">F→U Transition</span>
+            <input type="range" class="slider" id="transitionFU" min="0" max="100" value="25">
+            <span class="slider-value" id="transitionFUValue">25</span>
+        </div>
+
+        <div class="slider-group">
+            <span class="slider-label">U→C Transition</span>
+            <input type="range" class="slider" id="transitionUC" min="0" max="100" value="25">
+            <span class="slider-value" id="transitionUCValue">25</span>
+        </div>
+
+        <div class="slider-group">
+            <span class="slider-label">C→K Transition</span>
+            <input type="range" class="slider" id="transitionCK" min="0" max="100" value="25">
+            <span class="slider-value" id="transitionCKValue">25</span>
+        </div>
+
+        <div class="slider-group">
+            <span class="slider-label">Sequence Boost</span>
+            <input type="range" class="slider" id="sequenceBoost" min="0" max="100" value="0">
+            <span class="slider-value" id="sequenceBoostValue">0</span>
+        </div>
+
+        <button class="button" onclick="generateGrid()">Generate</button>
+        <button class="button" onclick="resetProbabilities()">Reset</button>
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <script>
+        const letters = ['F', 'U', 'C', 'K'];
+        const grid = document.getElementById('grid');
+        const status = document.getElementById('status');
+        const gridWidth = 40;
+        const gridHeight = 40;
+        let cells = [];
+
+        // Initialize grid
+        for (let i = 0; i < gridWidth * gridHeight; i++) {
+            const cell = document.createElement('div');
+            cell.className = 'cell';
+            cell.dataset.pos = i;
+            grid.appendChild(cell);
+            cells.push(cell);
+        }
+
+        // Initialize controls
+        const generationMode = document.getElementById('generationMode');
+        const sliders = {
+            baseBias: document.getElementById('baseBias'),
+            transitionFU: document.getElementById('transitionFU'),
+            transitionUC: document.getElementById('transitionUC'),
+            transitionCK: document.getElementById('transitionCK'),
+            sequenceBoost: document.getElementById('sequenceBoost')
+        };
+
+        const sliderValues = {
+            baseBias: document.getElementById('baseBiasValue'),
+            transitionFU: document.getElementById('transitionFUValue'),
+            transitionUC: document.getElementById('transitionUCValue'),
+            transitionCK: document.getElementById('transitionCKValue'),
+            sequenceBoost: document.getElementById('sequenceBoostValue')
+        };
+
+        // Add event listeners
+        generationMode.addEventListener('change', generateGrid);
+        Object.keys(sliders).forEach(key => {
+            sliders[key].addEventListener('input', function() {
+                sliderValues[key].textContent = this.value;
+                generateGrid();
+            });
+        });
+
+        function getLetterProbability(position, gridLetters) {
+            const baseBias = parseInt(sliders.baseBias.value);
+            const transitionFU = parseInt(sliders.transitionFU.value);
+            const transitionUC = parseInt(sliders.transitionUC.value);
+            const transitionCK = parseInt(sliders.transitionCK.value);
+            const sequenceBoost = parseInt(sliders.sequenceBoost.value);
+
+            let probabilities = {
+                F: baseBias,
+                U: baseBias,
+                C: baseBias,
+                K: baseBias
+            };
+
+            // Get adjacent cells (horizontal, vertical, diagonal)
+            const row = Math.floor(position / gridWidth);
+            const col = position % gridWidth;
+            const adjacentPositions = [
+                position - gridWidth - 1, position - gridWidth, position - gridWidth + 1, // above
+                position - 1, position + 1, // left, right
+                position + gridWidth - 1, position + gridWidth, position + gridWidth + 1 // below
+            ];
+
+            // Check for transition patterns
+            for (const adjPos of adjacentPositions) {
+                if (adjPos >= 0 && adjPos < gridLetters.length) {
+                    const adjLetter = gridLetters[adjPos];
+                    if (adjLetter === 'F') {
+                        probabilities.U += transitionFU;
+                    } else if (adjLetter === 'U') {
+                        probabilities.C += transitionUC;
+                    } else if (adjLetter === 'C') {
+                        probabilities.K += transitionCK;
+                    }
+                }
+            }
+
+            // Check for potential sequence completion
+            if (sequenceBoost > 0) {
+                // Look for partial sequences that could be completed
+                const directions = [
+                    [-1, 0], [1, 0], [0, -1], [0, 1], // horizontal, vertical
+                    [-1, -1], [-1, 1], [1, -1], [1, 1] // diagonal
+                ];
+
+                for (const [dr, dc] of directions) {
+                    // Check if we can complete a sequence starting from this position
+                    let sequence = '';
+                    for (let i = 0; i < 4; i++) {
+                        const checkRow = row + dr * i;
+                        const checkCol = col + dc * i;
+                        if (checkRow >= 0 && checkRow < gridHeight && checkCol >= 0 && checkCol < gridWidth) {
+                            const checkPos = checkRow * gridWidth + checkCol;
+                            if (checkPos === position) {
+                                sequence += '?'; // This is the position we're deciding
+                            } else if (gridLetters[checkPos]) {
+                                sequence += gridLetters[checkPos];
+                            } else {
+                                sequence += '?';
+                            }
+                        }
+                    }
+
+                    // Boost probabilities for letters that would complete FUCK
+                    if (sequence.includes('?')) {
+                        const patterns = [
+                            ['?UCK', 'F'], ['F?CK', 'U'], ['FU?K', 'C'], ['FUC?', 'K'],
+                            ['?FCK', 'U'], ['?UCK', 'F'], ['FU?C', 'K'], ['F?UC', 'C']
+                        ];
+
+                        for (const [pattern, letter] of patterns) {
+                            if (sequence.replace('?', letter) === 'FUCK') {
+                                probabilities[letter] += sequenceBoost;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return probabilities;
+        }
+
+        function generateStaggeredGrid() {
+            const gridLetters = new Array(gridWidth * gridHeight).fill('');
+            
+            // Create diagonal staggered pattern
+            for (let row = 0; row < gridHeight; row++) {
+                for (let col = 0; col < gridWidth; col++) {
+                    const position = row * gridWidth + col;
+                    // Stagger the starting letter for each row
+                    const letterIndex = (col + row) % 4;
+                    gridLetters[position] = letters[letterIndex];
+                }
+            }
+            
+            return gridLetters;
+        }
+
+        function generateMaximalGrid() {
+            const gridLetters = new Array(gridWidth * gridHeight).fill('');
+            
+            // Try to pack as many horizontal sequences as possible
+            for (let row = 0; row < gridHeight; row++) {
+                for (let col = 0; col < gridWidth; col++) {
+                    const position = row * gridWidth + col;
+                    
+                    // Every 4 columns, start a new FUCK sequence
+                    if (col % 4 === 0 && col + 3 < gridWidth) {
+                        gridLetters[position] = 'F';
+                        gridLetters[position + 1] = 'U';
+                        gridLetters[position + 2] = 'C';
+                        gridLetters[position + 3] = 'K';
+                    }
+                    // Fill any remaining cells with random letters
+                    else if (!gridLetters[position]) {
+                        gridLetters[position] = letters[Math.floor(Math.random() * letters.length)];
+                    }
+                }
+            }
+            
+            return gridLetters;
+        }
+
+        function generateRandomGrid() {
+            const gridLetters = new Array(gridWidth * gridHeight).fill('');
+
+            // Generate grid using contextual probabilities
+            for (let i = 0; i < gridLetters.length; i++) {
+                const probabilities = getLetterProbability(i, gridLetters);
+                const total = probabilities.F + probabilities.U + probabilities.C + probabilities.K;
+                
+                if (total === 0) {
+                    gridLetters[i] = letters[Math.floor(Math.random() * letters.length)];
+                } else {
+                    const rand = Math.random() * total;
+                    let cumulative = 0;
+                    let chosenLetter = 'F';
+
+                    for (const letter of letters) {
+                        cumulative += probabilities[letter];
+                        if (rand <= cumulative) {
+                            chosenLetter = letter;
+                            break;
+                        }
+                    }
+                    gridLetters[i] = chosenLetter;
+                }
+            }
+            
+            return gridLetters;
+        }
+
+        function generateGrid() {
+            let gridLetters;
+            
+            const mode = generationMode.value;
+            switch (mode) {
+                case 'staggered':
+                    gridLetters = generateStaggeredGrid();
+                    break;
+                case 'maximal':
+                    gridLetters = generateMaximalGrid();
+                    break;
+                case 'random':
+                default:
+                    gridLetters = generateRandomGrid();
+                    break;
+            }
+
+            // Update display
+            cells.forEach((cell, i) => {
+                cell.textContent = gridLetters[i];
+                cell.classList.remove('redacted');
+            });
+
+            checkForFuck(gridLetters);
+        }
+
+        function checkForFuck(gridLetters) {
+            let foundCount = 0;
+            const redactedCells = new Set();
+
+            // Check horizontal sequences
+            for (let row = 0; row < gridHeight; row++) {
+                for (let col = 0; col <= gridWidth - 4; col++) {
+                    const idx = row * gridWidth + col;
+                    if (gridLetters[idx] === 'F' && 
+                        gridLetters[idx + 1] === 'U' && 
+                        gridLetters[idx + 2] === 'C' && 
+                        gridLetters[idx + 3] === 'K') {
+                        for (let i = 0; i < 4; i++) {
+                            redactedCells.add(idx + i);
+                        }
+                        foundCount++;
+                    }
+                }
+            }
+
+            // Check vertical sequences
+            for (let col = 0; col < gridWidth; col++) {
+                for (let row = 0; row <= gridHeight - 4; row++) {
+                    const idx = row * gridWidth + col;
+                    if (gridLetters[idx] === 'F' && 
+                        gridLetters[idx + gridWidth] === 'U' && 
+                        gridLetters[idx + gridWidth * 2] === 'C' && 
+                        gridLetters[idx + gridWidth * 3] === 'K') {
+                        for (let i = 0; i < 4; i++) {
+                            redactedCells.add(idx + gridWidth * i);
+                        }
+                        foundCount++;
+                    }
+                }
+            }
+
+            // Check diagonal sequences (top-left to bottom-right)
+            for (let row = 0; row <= gridHeight - 4; row++) {
+                for (let col = 0; col <= gridWidth - 4; col++) {
+                    const idx = row * gridWidth + col;
+                    if (gridLetters[idx] === 'F' && 
+                        gridLetters[idx + gridWidth + 1] === 'U' && 
+                        gridLetters[idx + gridWidth * 2 + 2] === 'C' && 
+                        gridLetters[idx + gridWidth * 3 + 3] === 'K') {
+                        for (let i = 0; i < 4; i++) {
+                            redactedCells.add(idx + gridWidth * i + i);
+                        }
+                        foundCount++;
+                    }
+                }
+            }
+
+            // Check diagonal sequences (top-right to bottom-left)
+            for (let row = 0; row <= gridHeight - 4; row++) {
+                for (let col = 3; col < gridWidth; col++) {
+                    const idx = row * gridWidth + col;
+                    if (gridLetters[idx] === 'F' && 
+                        gridLetters[idx + gridWidth - 1] === 'U' && 
+                        gridLetters[idx + gridWidth * 2 - 2] === 'C' && 
+                        gridLetters[idx + gridWidth * 3 - 3] === 'K') {
+                        for (let i = 0; i < 4; i++) {
+                            redactedCells.add(idx + gridWidth * i - i);
+                        }
+                        foundCount++;
+                    }
+                }
+            }
+
+            // Apply redaction
+            redactedCells.forEach(cellIndex => {
+                cells[cellIndex].classList.add('redacted');
+            });
+
+            status.textContent = foundCount > 0 ? `${foundCount} FUCK sequences redacted` : 'No FUCK sequences';
+        }
+
+        function resetProbabilities() {
+            Object.keys(sliders).forEach(key => {
+                sliders[key].value = 25;
+                sliderValues[key].textContent = '25';
+            });
+            sliders.sequenceBoost.value = 0;
+            sliderValues.sequenceBoost.textContent = '0';
+            generateGrid();
+        }
+
+        // Initialize the grid
+        generateGrid();
+    </script>
+</body>
+</html>
