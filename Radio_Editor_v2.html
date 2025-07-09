@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Grid</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: white;
+            margin: 20px;
+            padding: 0;
+        }
+
+        .grid-container {
+            display: inline-block;
+            background: #000;
+            padding: 1px;
+            margin: 20px 0;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(40, 8px);
+            grid-template-rows: repeat(40, 8px);
+            gap: 1px;
+            font-size: 7px;
+            line-height: 8px;
+        }
+
+        .cell {
+            width: 8px;
+            height: 8px;
+            background: white;
+            color: black;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .cell.redacted {
+            background: black;
+            color: black;
+        }
+
+        .controls {
+            margin: 20px 0;
+        }
+
+        .control-group {
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background: #f9f9f9;
+        }
+
+        .control-group h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+        }
+
+        .slider-group {
+            margin: 5px 0;
+            display: flex;
+            align-items: center;
+        }
+
+        .slider-label {
+            width: 120px;
+            font-weight: bold;
+            font-size: 12px;
+        }
+
+        .slider {
+            width: 150px;
+            margin: 0 10px;
+            height: 20px;
+        }
+
+        .slider-value {
+            font-weight: bold;
+            width: 30px;
+            font-size: 12px;
+        }
+
+        .button {
+            background: white;
+            color: black;
+            border: 1px solid black;
+            padding: 5px 10px;
+            margin: 5px;
+            cursor: pointer;
+            font-family: monospace;
+        }
+
+        .button:hover {
+            background: black;
+            color: white;
+        }
+
+        .button.active {
+            background: black;
+            color: white;
+        }
+
+        .status {
+            margin: 10px 0;
+            font-weight: bold;
+        }
+
+        .word-selection {
+            display: flex;
+            gap: 10px;
+            margin: 10px 0;
+            flex-wrap: wrap;
+        }
+
+        .word-button {
+            background: white;
+            color: black;
+            border: 2px solid black;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-family: monospace;
+            font-weight: bold;
+        }
+
+        .word-button:hover {
+            background: #f0f0f0;
+        }
+
+        .word-button.selected {
+            background: black;
+            color: white;
+        }
+
+        .probability-controls {
+            transition: opacity 0.3s ease;
+        }
+
+        .probability-controls.hidden {
+            opacity: 0.3;
+            pointer-events: none;
+        }
+
+        select, input[type="range"] {
+            font-family: monospace;
+        }
+
+        .toggle-group {
+            margin: 10px 0;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .checkbox {
+            width: 16px;
+            height: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="grid-container">
+        <div class="grid" id="grid"></div>
+    </div>
+
+    <div class="controls">
+        <div class="control-group">
+            <h3>Word Selection</h3>
+            <div class="word-selection">
+                <button class="word-button selected" data-word="FUCK">FUCK</button>
+                <button class="word-button" data-word="SHIT">SHIT</button>
+                <button class="word-button" data-word="BUTT">BUTT</button>
+                <button class="word-button" data-word="CRAP">CRAP</button>
+                <button class="word-button" data-word="DAMN">DAMN</button>
+                <button class="word-button" data-word="HELL">HELL</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <h3>Generation Settings</h3>
+            <div class="slider-group">
+                <span class="slider-label">Generation Mode</span>
+                <select id="generationMode" style="width: 150px; margin: 0 10px; height: 24px;">
+                    <option value="random">Random Probabilistic</option>
+                    <option value="staggered">Staggered Diagonal</option>
+                    <option value="maximal">Maximal Packing</option>
+                </select>
+            </div>
+            
+            <div class="toggle-group">
+                <div class="checkbox-group">
+                    <input type="checkbox" class="checkbox" id="redactionToggle" checked>
+                    <label for="redactionToggle">Enable Redaction</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="control-group probability-controls" id="probabilityControls">
+            <h3>Probability Controls</h3>
+            <div class="slider-group">
+                <span class="slider-label">Base Letter Bias</span>
+                <input type="range" class="slider" id="baseBias" min="0" max="100" value="25">
+                <span class="slider-value" id="baseBiasValue">25</span>
+            </div>
+
+            <div class="slider-group">
+                <span class="slider-label">1st→2nd Transition</span>
+                <input type="range" class="slider" id="transition12" min="0" max="100" value="25">
+                <span class="slider-value" id="transition12Value">25</span>
+            </div>
+
+            <div class="slider-group">
+                <span class="slider-label">2nd→3rd Transition</span>
+                <input type="range" class="slider" id="transition23" min="0" max="100" value="25">
+                <span class="slider-value" id="transition23Value">25</span>
+            </div>
+
+            <div class="slider-group">
+                <span class="slider-label">3rd→4th Transition</span>
+                <input type="range" class="slider" id="transition34" min="0" max="100" value="25">
+                <span class="slider-value" id="transition34Value">25</span>
+            </div>
+
+            <div class="slider-group">
+                <span class="slider-label">Sequence Boost</span>
+                <input type="range" class="slider" id="sequenceBoost" min="0" max="100" value="0">
+                <span class="slider-value" id="sequenceBoostValue">0</span>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <button class="button" onclick="generateGrid()">Generate</button>
+            <button class="button" onclick="resetProbabilities()">Reset</button>
+        </div>
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <script>
+        const words = {
+            'FUCK': ['F', 'U', 'C', 'K'],
+            'SHIT': ['S', 'H', 'I', 'T'],
+            'BUTT': ['B', 'U', 'T', 'T'],
+            'CRAP': ['C', 'R', 'A', 'P'],
+            'DAMN': ['D', 'A', 'M', 'N'],
+            'HELL': ['H', 'E', 'L', 'L']
+        };
+
+        let currentWord = 'FUCK';
+        let currentLetters = words[currentWord];
+        
+        const grid = document.getElementById('grid');
+        const status = document.getElementById('status');
+        const gridWidth = 40;
+        const gridHeight = 40;
+        let cells = [];
+
+        // Initialize grid
+        for (let i = 0; i < gridWidth * gridHeight; i++) {
+            const cell = document.createElement('div');
+            cell.className = 'cell';
+            cell.dataset.pos = i;
+            grid.appendChild(cell);
+            cells.push(cell);
+        }
+
+        // Initialize controls
+        const generationMode = document.getElementById('generationMode');
+        const redactionToggle = document.getElementById('redactionToggle');
+        const probabilityControls = document.getElementById('probabilityControls');
+        
+        const sliders = {
+            baseBias: document.getElementById('baseBias'),
+            transition12: document.getElementById('transition12'),
+            transition23: document.getElementById('transition23'),
+            transition34: document.getElementById('transition34'),
+            sequenceBoost: document.getElementById('sequenceBoost')
+        };
+
+        const sliderValues = {
+            baseBias: document.getElementById('baseBiasValue'),
+            transition12: document.getElementById('transition12Value'),
+            transition23: document.getElementById('transition23Value'),
+            transition34: document.getElementById('transition34Value'),
+            sequenceBoost: document.getElementById('sequenceBoostValue')
+        };
+
+        // Word selection event listeners
+        document.querySelectorAll('.word-button').forEach(button => {
+            button.addEventListener('click', function() {
+                document.querySelectorAll('.word-button').forEach(b => b.classList.remove('selected'));
+                this.classList.add('selected');
+                currentWord = this.dataset.word;
+                currentLetters = words[currentWord];
+                generateGrid();
+            });
+        });
+
+        // Add event listeners
+        generationMode.addEventListener('change', function() {
+            const mode = this.value;
+            if (mode === 'random') {
+                probabilityControls.classList.remove('hidden');
+            } else {
+                probabilityControls.classList.add('hidden');
+            }
+            generateGrid();
+        });
+
+        redactionToggle.addEventListener('change', function() {
+            applyRedactionToggle();
+        });
+
+        Object.keys(sliders).forEach(key => {
+            sliders[key].addEventListener('input', function() {
+                sliderValues[key].textContent = this.value;
+                generateGrid();
+            });
+        });
+
+        function getLetterProbability(position, gridLetters) {
+            const baseBias = parseInt(sliders.baseBias.value);
+            const transition12 = parseInt(sliders.transition12.value);
+            const transition23 = parseInt(sliders.transition23.value);
+            const transition34 = parseInt(sliders.transition34.value);
+            const sequenceBoost = parseInt(sliders.sequenceBoost.value);
+
+            let probabilities = {};
+            currentLetters.forEach(letter => {
+                probabilities[letter] = baseBias;
+            });
+
+            // Get adjacent cells (horizontal, vertical, diagonal)
+            const row = Math.floor(position / gridWidth);
+            const col = position % gridWidth;
+            const adjacentPositions = [
+                position - gridWidth - 1, position - gridWidth, position - gridWidth + 1,
+                position - 1, position + 1,
+                position + gridWidth - 1, position + gridWidth, position + gridWidth + 1
+            ];
+
+            // Check for transition patterns
+            for (const adjPos of adjacentPositions) {
+                if (adjPos >= 0 && adjPos < gridLetters.length) {
+                    const adjLetter = gridLetters[adjPos];
+                    const adjIndex = currentLetters.indexOf(adjLetter);
+                    
+                    if (adjIndex === 0) {
+                        probabilities[currentLetters[1]] += transition12;
+                    } else if (adjIndex === 1) {
+                        probabilities[currentLetters[2]] += transition23;
+                    } else if (adjIndex === 2) {
+                        probabilities[currentLetters[3]] += transition34;
+                    }
+                }
+            }
+
+            // Sequence boost logic
+            if (sequenceBoost > 0) {
+                const directions = [
+                    [-1, 0], [1, 0], [0, -1], [0, 1],
+                    [-1, -1], [-1, 1], [1, -1], [1, 1]
+                ];
+
+                for (const [dr, dc] of directions) {
+                    let sequence = '';
+                    for (let i = 0; i < 4; i++) {
+                        const checkRow = row + dr * i;
+                        const checkCol = col + dc * i;
+                        if (checkRow >= 0 && checkRow < gridHeight && checkCol >= 0 && checkCol < gridWidth) {
+                            const checkPos = checkRow * gridWidth + checkCol;
+                            if (checkPos === position) {
+                                sequence += '?';
+                            } else if (gridLetters[checkPos]) {
+                                sequence += gridLetters[checkPos];
+                            } else {
+                                sequence += '?';
+                            }
+                        }
+                    }
+
+                    if (sequence.includes('?')) {
+                        for (let i = 0; i < 4; i++) {
+                            const testSequence = sequence.replace('?', currentLetters[i]);
+                            if (testSequence === currentWord) {
+                                probabilities[currentLetters[i]] += sequenceBoost;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return probabilities;
+        }
+
+        function generateStaggeredGrid() {
+            const gridLetters = new Array(gridWidth * gridHeight).fill('');
+            
+            for (let row = 0; row < gridHeight; row++) {
+                for (let col = 0; col < gridWidth; col++) {
+                    const position = row * gridWidth + col;
+                    const letterIndex = (col + row) % 4;
+                    gridLetters[position] = currentLetters[letterIndex];
+                }
+            }
+            
+            return gridLetters;
+        }
+
+        function generateMaximalGrid() {
+            const gridLetters = new Array(gridWidth * gridHeight).fill('');
+            
+            for (let row = 0; row < gridHeight; row++) {
+                for (let col = 0; col < gridWidth; col++) {
+                    const position = row * gridWidth + col;
+                    
+                    if (col % 4 === 0 && col + 3 < gridWidth) {
+                        gridLetters[position] = currentLetters[0];
+                        gridLetters[position + 1] = currentLetters[1];
+                        gridLetters[position + 2] = currentLetters[2];
+                        gridLetters[position + 3] = currentLetters[3];
+                    } else if (!gridLetters[position]) {
+                        gridLetters[position] = currentLetters[Math.floor(Math.random() * currentLetters.length)];
+                    }
+                }
+            }
+            
+            return gridLetters;
+        }
+
+        function generateRandomGrid() {
+            const gridLetters = new Array(gridWidth * gridHeight).fill('');
+
+            for (let i = 0; i < gridLetters.length; i++) {
+                const probabilities = getLetterProbability(i, gridLetters);
+                const total = Object.values(probabilities).reduce((sum, val) => sum + val, 0);
+                
+                if (total === 0) {
+                    gridLetters[i] = currentLetters[Math.floor(Math.random() * currentLetters.length)];
+                } else {
+                    const rand = Math.random() * total;
+                    let cumulative = 0;
+                    let chosenLetter = currentLetters[0];
+
+                    for (const letter of currentLetters) {
+                        cumulative += probabilities[letter];
+                        if (rand <= cumulative) {
+                            chosenLetter = letter;
+                            break;
+                        }
+                    }
+                    gridLetters[i] = chosenLetter;
+                }
+            }
+            
+            return gridLetters;
+        }
+
+        function generateGrid() {
+            let gridLetters;
+            
+            const mode = generationMode.value;
+            switch (mode) {
+                case 'staggered':
+                    gridLetters = generateStaggeredGrid();
+                    break;
+                case 'maximal':
+                    gridLetters = generateMaximalGrid();
+                    break;
+                case 'random':
+                default:
+                    gridLetters = generateRandomGrid();
+                    break;
+            }
+
+            // Update display
+            cells.forEach((cell, i) => {
+                cell.textContent = gridLetters[i];
+                cell.classList.remove('redacted');
+            });
+
+            checkForSequences(gridLetters);
+            applyRedactionToggle();
+        }
+
+        function checkForSequences(gridLetters) {
+            let foundCount = 0;
+            const redactedCells = new Set();
+
+            // Check horizontal sequences
+            for (let row = 0; row < gridHeight; row++) {
+                for (let col = 0; col <= gridWidth - 4; col++) {
+                    const idx = row * gridWidth + col;
+                    let matches = true;
+                    for (let i = 0; i < 4; i++) {
+                        if (gridLetters[idx + i] !== currentLetters[i]) {
+                            matches = false;
+                            break;
+                        }
+                    }
+                    if (matches) {
+                        for (let i = 0; i < 4; i++) {
+                            redactedCells.add(idx + i);
+                        }
+                        foundCount++;
+                    }
+                }
+            }
+
+            // Check vertical sequences
+            for (let col = 0; col < gridWidth; col++) {
+                for (let row = 0; row <= gridHeight - 4; row++) {
+                    const idx = row * gridWidth + col;
+                    let matches = true;
+                    for (let i = 0; i < 4; i++) {
+                        if (gridLetters[idx + gridWidth * i] !== currentLetters[i]) {
+                            matches = false;
+                            break;
+                        }
+                    }
+                    if (matches) {
+                        for (let i = 0; i < 4; i++) {
+                            redactedCells.add(idx + gridWidth * i);
+                        }
+                        foundCount++;
+                    }
+                }
+            }
+
+            // Check diagonal sequences (top-left to bottom-right)
+            for (let row = 0; row <= gridHeight - 4; row++) {
+                for (let col = 0; col <= gridWidth - 4; col++) {
+                    const idx = row * gridWidth + col;
+                    let matches = true;
+                    for (let i = 0; i < 4; i++) {
+                        if (gridLetters[idx + gridWidth * i + i] !== currentLetters[i]) {
+                            matches = false;
+                            break;
+                        }
+                    }
+                    if (matches) {
+                        for (let i = 0; i < 4; i++) {
+                            redactedCells.add(idx + gridWidth * i + i);
+                        }
+                        foundCount++;
+                    }
+                }
+            }
+
+            // Check diagonal sequences (top-right to bottom-left)
+            for (let row = 0; row <= gridHeight - 4; row++) {
+                for (let col = 3; col < gridWidth; col++) {
+                    const idx = row * gridWidth + col;
+                    let matches = true;
+                    for (let i = 0; i < 4; i++) {
+                        if (gridLetters[idx + gridWidth * i - i] !== currentLetters[i]) {
+                            matches = false;
+                            break;
+                        }
+                    }
+                    if (matches) {
+                        for (let i = 0; i < 4; i++) {
+                            redactedCells.add(idx + gridWidth * i - i);
+                        }
+                        foundCount++;
+                    }
+                }
+            }
+
+            // Store redacted cells for toggle functionality
+            window.redactedCells = redactedCells;
+            status.textContent = foundCount > 0 ? `${foundCount} ${currentWord} sequences found` : `No ${currentWord} sequences`;
+        }
+
+        function applyRedactionToggle() {
+            const isEnabled = redactionToggle.checked;
+            
+            cells.forEach(cell => {
+                cell.classList.remove('redacted');
+            });
+            
+            if (isEnabled && window.redactedCells) {
+                window.redactedCells.forEach(cellIndex => {
+                    cells[cellIndex].classList.add('redacted');
+                });
+            }
+        }
+
+        function resetProbabilities() {
+            Object.keys(sliders).forEach(key => {
+                if (key === 'sequenceBoost') {
+                    sliders[key].value = 0;
+                    sliderValues[key].textContent = '0';
+                } else {
+                    sliders[key].value = 25;
+                    sliderValues[key].textContent = '25';
+                }
+            });
+            generateGrid();
+        }
+
+        // Initialize the grid
+        generateGrid();
+    </script>
+</body>
+</html>
